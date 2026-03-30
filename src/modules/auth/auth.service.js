@@ -1,3 +1,4 @@
+import { sendVerificationMail } from "../../common/config/email.js";
 import ApiError from "../../common/utils/api-error.js";
 import {
 	generateAccessToken,
@@ -25,7 +26,12 @@ const register = async ({ name, email, password, role }) => {
 		verificationToken: hashedToken,
 	});
 
-	// TODO: Send an email to user with token: rawToken
+	// Send an email to user with token: rawToken
+	try {
+		await sendVerificationMail(user.email, rawToken);
+	} catch (error) {
+		console.error("Error sending mail - ", error);
+	}
 
 	const userObj = user.toObject();
 	delete userObj.password;
@@ -42,7 +48,8 @@ const login = async ({ email, password }) => {
 	const user = await User.findOne({ email }).select("+password");
 	if (!user) throw ApiError.unauthorized("Invalid email or password");
 
-	// somehow I will check password
+	const isMatch = await user.comparePassword(password);
+	if (!isMatch) throw ApiError.unauthorized("Invalid email or password.");
 
 	if (!user.isVerified) {
 		throw ApiError.forbidden("Please verify email before login");
@@ -99,4 +106,23 @@ const forgotPassword = async (email) => {
 	// TODO - send mail
 };
 
-export { register };
+const verifyEmail = async (token) => {
+	const hashedToken = hashToken(token);
+	const user = await User.findOne({ verificationToken: hashedToken }).select(
+		"+verificationToken",
+	);
+	if (!user) throw ApiError.badRequest("Invalid token");
+
+	user.isVerified = true;
+	user.verificationToken = undefined;
+	await user.save({});
+	return user;
+};
+
+const getMe = async (userId) => {
+	const user = await User.findById(userId);
+	if (!user) throw ApiError.notfound("User not found");
+	return user;
+};
+
+export { register, login, refresh, logout, forgotPassword, verifyEmail };
